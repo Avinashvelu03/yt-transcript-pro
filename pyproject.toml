@@ -1,0 +1,139 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yt-transcript-pro"
+version = "1.0.0"
+description = "Production-grade YouTube transcript extractor: single videos, batches, playlists, and entire channels."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Avinashvelu03", email = "avinashvelu03@users.noreply.github.com" }]
+keywords = ["youtube", "transcript", "subtitles", "captions", "channel", "playlist", "async"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "youtube-transcript-api>=0.6.2",
+    "yt-dlp>=2024.1.1",
+    "rich>=13.5.0",
+    "typer>=0.9.0",
+    "pydantic>=2.0.0",
+    "tenacity>=8.2.0",
+    "aiohttp>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.11",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "bandit>=1.7.5",
+]
+
+[project.scripts]
+yt-transcript-pro = "yt_transcript_pro.cli:app"
+yttp = "yt_transcript_pro.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Avinashvelu03/yt-transcript-pro"
+Repository = "https://github.com/Avinashvelu03/yt-transcript-pro"
+Issues = "https://github.com/Avinashvelu03/yt-transcript-pro/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+yt_transcript_pro = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # flake8-bugbear
+    "A",         # flake8-builtins
+    "C4",        # flake8-comprehensions
+    "SIM",       # flake8-simplify
+    "RET",       # flake8-return
+    "PTH",       # flake8-use-pathlib
+    "RUF",       # ruff-specific
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "N802"]
+# typer intentionally uses `typer.Argument` / `typer.Option` in defaults (idiomatic)
+"src/yt_transcript_pro/cli.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:yt_dlp.*",
+    "ignore::DeprecationWarning:youtube_transcript_api.*",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/yt_transcript_pro"]
+omit = ["*/tests/*", "*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 100
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@overload",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+# B101: allow asserts in tests
+# B112: the one occurrence is a deliberate per-transcript fallback that also logs
+skips = ["B101", "B112"]
