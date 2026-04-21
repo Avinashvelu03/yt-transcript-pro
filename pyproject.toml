@@ -86,7 +86,8 @@ ignore = ["E501"]  # line length handled by formatter
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011", "N802"]
 # typer intentionally uses `typer.Argument` / `typer.Option` in defaults (idiomatic)
-"src/yt_transcript_pro/cli.py" = ["B008"]
+# UP007/UP045: must use Optional[X] instead of X | None for Python 3.9 Typer compat
+"src/yt_transcript_pro/cli.py" = ["B008", "UP007", "UP045"]
 
 [tool.mypy]
 python_version = "3.9"
