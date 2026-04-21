@@ -6,6 +6,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -55,7 +56,7 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def _root(
-    version: bool | None = typer.Option(
+    version: Optional[bool] = typer.Option(
         None, "--version", "-V", callback=_version_callback, is_eager=True,
         help="Show version and exit.",
     ),
@@ -83,7 +84,7 @@ def extract(
         "combined", "--combined-name", help="Filename stem for combined output.",
     ),
     concurrency: int = typer.Option(5, "--concurrency", "-c", min=1, max=64),
-    max_videos: int | None = typer.Option(
+    max_videos: Optional[int] = typer.Option(
         None, "--max-videos", "-n", help="Limit total videos processed.",
     ),
     languages: str = typer.Option(
@@ -105,18 +106,18 @@ def extract(
     resume: bool = typer.Option(
         True, "--resume/--no-resume", help="Skip videos already completed.",
     ),
-    checkpoint: Path | None = typer.Option(
+    checkpoint: Optional[Path] = typer.Option(
         None, "--checkpoint", help="Path to checkpoint JSON file.",
     ),
     retries: int = typer.Option(4, "--retries", min=0, max=20),
-    proxy: str | None = typer.Option(
+    proxy: Optional[str] = typer.Option(
         None, "--proxy",
         help="HTTP(S) proxy URL (e.g. http://user:pass@host:port) to bypass YouTube IP blocks.",
     ),
-    webshare_user: str | None = typer.Option(
+    webshare_user: Optional[str] = typer.Option(
         None, "--webshare-user", help="Webshare rotating-residential proxy username.",
     ),
-    webshare_pass: str | None = typer.Option(
+    webshare_pass: Optional[str] = typer.Option(
         None, "--webshare-pass", help="Webshare rotating-residential proxy password.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
@@ -155,7 +156,7 @@ def extract(
         raise typer.Exit(code=2)
     console.print(f"[green]Resolved {len(videos)} video(s).[/green]")
 
-    ckpt: Checkpoint | None = None
+    ckpt: Optional[Checkpoint] = None
     if cfg.resume:
         ckpt_path = cfg.checkpoint_file or (cfg.output_dir / ".yttp-checkpoint.json")
         ckpt = Checkpoint(ckpt_path)
@@ -191,7 +192,7 @@ def _run(
     writer: FormatWriter,
     videos: list[VideoMetadata],
     cfg: Config,
-    ckpt: Checkpoint | None,
+    ckpt: Optional[Checkpoint],
 ) -> list[TranscriptResult]:
     formats = _formats_to_write(cfg.output_format)
     results: list[TranscriptResult] = []
@@ -238,7 +239,7 @@ def _run(
 @app.command()
 def resolve(
     sources: list[str] = typer.Argument(..., help="Sources to resolve (no download)."),
-    max_videos: int | None = typer.Option(None, "--max-videos", "-n"),
+    max_videos: Optional[int] = typer.Option(None, "--max-videos", "-n"),
 ) -> None:
     """Only resolve sources into video IDs (for inspection / piping)."""
     resolver = SourceResolver()
