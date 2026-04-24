@@ -13,7 +13,7 @@ import typer
 from rich.console import Console
 
 # ---- Windows console UTF-8 workaround ----
-# Rich's progress bar uses non-ASCII glyphs (✓ ✗ etc.) that crash on the
+# Rich's progress bar can use non-ASCII glyphs that crash on the
 # default cp1252 console on Windows. Force UTF-8 output transparently.
 if os.name == "nt":  # pragma: no cover — Windows-only
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -305,14 +305,8 @@ def _run(
         task_id = progress.add_task("Extracting", total=len(videos))
 
         def on_progress(done: int, total: int, res: TranscriptResult) -> None:
-            # Use ASCII on Windows legacy consoles to avoid cp1252 crashes;
-            # the top-of-file workaround already reconfigures stdout to UTF-8,
-            # but this belt-and-braces keeps the progress bar safe even if
-            # the user pipes output to a file with a narrow encoding.
-            if os.name == "nt":
-                status = "OK" if res.success else "XX"
-            else:  # pragma: no cover — Unix only
-                status = "✓" if res.success else "✗"
+            # Keep markers ASCII so redirected output is safe on all platforms.
+            status = "OK" if res.success else "XX"
             progress.update(
                 task_id,
                 completed=done,
