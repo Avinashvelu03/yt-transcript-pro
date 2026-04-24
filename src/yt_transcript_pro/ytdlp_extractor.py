@@ -436,11 +436,10 @@ def _parse_json3(data: bytes) -> list[TranscriptEntry]:
         if not segs:
             continue
         text = "".join(s.get("utf8", "") for s in segs).strip()
-        if not text or text == "\n":
-            continue
-        start = float(ev.get("tStartMs", 0)) / 1000.0
-        dur = float(ev.get("dDurationMs", 0)) / 1000.0
-        out.append(TranscriptEntry(text=text, start=max(start, 0.0), duration=max(dur, 0.0)))
+        if text and text != "\n":
+            start = float(ev.get("tStartMs", 0)) / 1000.0
+            dur = float(ev.get("dDurationMs", 0)) / 1000.0
+            out.append(TranscriptEntry(text=text, start=max(start, 0.0), duration=max(dur, 0.0)))
     return out
 
 

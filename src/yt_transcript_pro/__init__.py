@@ -30,7 +30,7 @@ from yt_transcript_pro.watch_extractor import WatchPageTranscriptExtractor
 from yt_transcript_pro.writers import FormatWriter
 from yt_transcript_pro.ytdlp_extractor import YtDlpTranscriptExtractor
 
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 __author__ = "Avinashvelu03"
 __all__ = [
     "AutoTranscriptExtractor",
