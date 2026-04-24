@@ -175,3 +175,28 @@ class FormatWriter:
                 parts.append(self.render(r, fmt))
         path.write_text(sep.join(parts), encoding="utf-8")
         return path
+
+    def append_combined(
+        self,
+        result: TranscriptResult,
+        fmt: str,
+        filename: str = "combined",
+    ) -> Path:
+        """Append a single transcript to the combined file atomically.
+
+        Each call opens the file in append mode, writes an 80-``=``
+        separator + the rendered transcript, and closes it.  Safe to
+        call from a progress callback so partial runs produce durable
+        output even on Ctrl-C.
+        """
+        if not result.success:
+            return self.config.output_dir / f"{filename}.{fmt}"
+        self.config.output_dir.mkdir(parents=True, exist_ok=True)
+        path = self.config.output_dir / f"{filename}.{fmt}"
+        sep = "\n\n" + ("=" * 80) + "\n\n"
+        chunk = self.render(result, fmt)
+        with path.open("a", encoding="utf-8") as fh:
+            if path.stat().st_size > 0:
+                fh.write(sep)
+            fh.write(chunk)
+        return path
