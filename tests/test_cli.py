@@ -95,6 +95,8 @@ def test_extract_end_to_end(
             "-f",
             "txt",
             "--no-resume",
+            "--backend",
+            "api",
         ],
     )
     assert result.exit_code == 0, result.stdout
@@ -129,6 +131,8 @@ def test_extract_combined_all(
             "--combined-name",
             "mega",
             "--no-resume",
+            "--backend",
+            "api",
             "-v",
         ],
     )
@@ -177,7 +181,7 @@ def test_extract_max_videos(
     monkeypatch.setattr(cli_module.TranscriptExtractor, "fetch_many", fake_fetch_many)
     runner.invoke(
         app,
-        ["extract", "X", "-o", str(tmp_path / "o"), "-n", "3", "--no-resume"],
+        ["extract", "X", "-o", str(tmp_path / "o"), "-n", "3", "--no-resume", "--backend", "api"],
     )
     assert captured["n"] == 3
 
@@ -221,7 +225,8 @@ def test_extract_writes_checkpoint(
 
     outdir = tmp_path / "out"
     result = runner.invoke(
-        app, ["extract", "X", "-o", str(outdir), "--resume"]
+        app,
+        ["extract", "X", "-o", str(outdir), "--resume", "--backend", "api"],
     )
     assert result.exit_code == 0, result.stdout
     ckpt = outdir / ".yttp-checkpoint.json"

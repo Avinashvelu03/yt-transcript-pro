@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yt-transcript-pro"
-version = "1.0.0"
-description = "Production-grade YouTube transcript extractor: single videos, batches, playlists, and entire channels."
+version = "2.0.0"
+description = "Production-grade YouTube transcript extractor: single videos, batches, playlists, and entire channels. v2 adds IP-block-resistant multi-backend cascade."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -21,17 +21,21 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Video",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
     "youtube-transcript-api>=0.6.2",
-    "yt-dlp>=2024.1.1",
+    # 2025.x yt-dlp introduced the ``tv_simply`` client and
+    # ``ignore_no_formats_error`` option that the new backends depend on.
+    "yt-dlp>=2025.1.1",
     "rich>=13.5.0",
     "typer>=0.9.0",
     "pydantic>=2.0.0",
     "tenacity>=8.2.0",
     "aiohttp>=3.9.0",
+    "requests>=2.28.0",
     "eval_type_backport>=0.2.0; python_version < '3.10'",
 ]
 
@@ -132,6 +136,16 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
     "@overload",
+]
+exclude_also = [
+    "pragma: no branch",
+]
+partial_branches = [
+    "pragma: no branch",
+    # for/else loops — the else clause may not be hit in tests
+    "for .* in .*:",
+    # progress callback try/except — the except is safety-net only
+    "except Exception.*:.*noqa: BLE001",
 ]
 
 [tool.bandit]
