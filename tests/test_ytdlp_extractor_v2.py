@@ -3,28 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
 import urllib.error
 from typing import Any
-from zlib import compress
 
 import pytest
 
 from yt_transcript_pro.config import Config
-from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
+from yt_transcript_pro.models import TranscriptResult, VideoMetadata
 from yt_transcript_pro.ytdlp_extractor import (
     YtDlpTranscriptExtractor,
-    _http_get,
     _parse_json3,
     _parse_vtt,
     _parse_xml_captions,
+    _SilentLogger,
     _ttml_time,
     parse_subtitle,
-    _classify_error,
-    _SilentLogger,
 )
-
 
 # ---------------------------------------------------------------------------
 # _SilentLogger
@@ -97,13 +92,13 @@ def test_parse_json3_no_segs() -> None:
 
 def test_parse_ttml() -> None:
     data = (
-        '<?xml version="1.0"?>'
-        '<tt xmlns="http://www.w3.org/ns/ttml">'
-        '<body><div>'
-        '<p begin="1.5s" dur="2.0s">hello</p>'
-        '<p begin="4.0s" dur="1.0s">world</p>'
-        '</div></body></tt>'
-    ).encode()
+        b'<?xml version="1.0"?>'
+        b'<tt xmlns="http://www.w3.org/ns/ttml">'
+        b'<body><div>'
+        b'<p begin="1.5s" dur="2.0s">hello</p>'
+        b'<p begin="4.0s" dur="1.0s">world</p>'
+        b'</div></body></tt>'
+    )
     entries = _parse_xml_captions(data)
     assert len(entries) == 2
     assert entries[0].text == "hello"
@@ -131,14 +126,14 @@ def test_parse_xml_regex_fallback() -> None:
 
 def test_parse_vtt_dedup() -> None:
     data = (
-        "WEBVTT\n\n"
-        "00:00:01.000 --> 00:00:03.000\n"
-        "same text\n\n"
-        "00:00:03.000 --> 00:00:05.000\n"
-        "same text\n\n"
-        "00:00:05.000 --> 00:00:07.000\n"
-        "different\n"
-    ).encode()
+        b"WEBVTT\n\n"
+        b"00:00:01.000 --> 00:00:03.000\n"
+        b"same text\n\n"
+        b"00:00:03.000 --> 00:00:05.000\n"
+        b"same text\n\n"
+        b"00:00:05.000 --> 00:00:07.000\n"
+        b"different\n"
+    )
     entries = _parse_vtt(data)
     assert [e.text for e in entries] == ["same text", "different"]
 
@@ -161,10 +156,10 @@ def test_parse_subtitle_srv3() -> None:
 
 def test_parse_subtitle_vtt() -> None:
     data = (
-        "WEBVTT\n\n"
-        "00:00:01.000 --> 00:00:03.000\n"
-        "hi\n"
-    ).encode()
+        b"WEBVTT\n\n"
+        b"00:00:01.000 --> 00:00:03.000\n"
+        b"hi\n"
+    )
     entries = parse_subtitle(data, "vtt")
     assert entries[0].text == "hi"
 
@@ -179,7 +174,7 @@ class TestPickTrack:
         pool = {"en": [{"ext": "json3", "url": "http://x"}]}
         result = YtDlpTranscriptExtractor._pick_track(pool, ["en"])
         assert result is not None
-        _, lang, track = result
+        _, lang, _track = result
         assert lang == "en"
 
     def test_prefix_match(self) -> None:
@@ -375,7 +370,7 @@ def test_fetch_one_generic_exception(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -397,7 +392,7 @@ def test_fetch_one_info_none(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -419,7 +414,7 @@ def test_fetch_one_no_usable_subs(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -443,14 +438,15 @@ def test_fetch_one_no_usable_subs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_async_fetch_one_antibot_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
-    import yt_transcript_pro.ytdlp_extractor as yem
     from yt_dlp.utils import DownloadError
+
+    import yt_transcript_pro.ytdlp_extractor as yem
 
     class FakeYDL:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -469,6 +465,46 @@ def test_async_fetch_one_antibot_throttle(monkeypatch: pytest.MonkeyPatch) -> No
     assert ext._consecutive_throttles > 0
 
 
+def test_ytdlp_note_success_initializes_lock() -> None:
+    ext = YtDlpTranscriptExtractor(Config())
+    assert ext._throttle_lock is None
+    asyncio.run(ext._note_success())
+    assert ext._throttle_lock is not None
+
+
+def test_ytdlp_http_get_with_user_agent_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    import yt_transcript_pro.ytdlp_extractor as yem
+
+    class FakeResponse:
+        def __init__(self) -> None:
+            self.headers = {"Content-Encoding": ""}
+
+        def read(self) -> bytes:
+            return b"ok"
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        yem,
+        "_pick_browser_profile",
+        lambda: {"User-Agent": "default", "Accept-Language": "en"},
+    )
+    monkeypatch.setattr(
+        yem.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert (
+        yem._http_get("https://www.youtube.com/watch?v=abcdefghijk", ua="custom")
+        == b"ok"
+    )
+
+
 def test_async_fetch_many_progress_callback_error(monkeypatch: pytest.MonkeyPatch) -> None:
     import yt_transcript_pro.ytdlp_extractor as yem
 
@@ -476,7 +512,7 @@ def test_async_fetch_many_progress_callback_error(monkeypatch: pytest.MonkeyPatc
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:

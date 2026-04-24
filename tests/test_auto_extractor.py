@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from typing import Any
 
 import pytest
 
-from yt_transcript_pro.auto_extractor import AutoTranscriptExtractor, _BREAKER_THRESHOLD
+from yt_transcript_pro.auto_extractor import _BREAKER_THRESHOLD, AutoTranscriptExtractor
 from yt_transcript_pro.config import Config
 from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
 

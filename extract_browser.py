@@ -1,6 +1,6 @@
 """
 Extract transcripts using a real browser (Selenium/Chrome) to bypass IP bans.
-The browser carries your real cookies, TLS fingerprint, and session — 
+The browser carries your real cookies, TLS fingerprint, and session —
 YouTube cannot distinguish it from normal browsing.
 
 Requirements:
@@ -14,12 +14,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
 import time
-import logging
+import urllib.error
+import urllib.request
 from pathlib import Path
+
+from yt_dlp import YoutubeDL
+
+from yt_transcript_pro.config import Config
+from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
+from yt_transcript_pro.resolver import SourceResolver
+from yt_transcript_pro.writers import FormatWriter
 
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 if sys.platform == "win32":
@@ -33,12 +42,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-from yt_dlp import YoutubeDL
-from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
-from yt_transcript_pro.resolver import SourceResolver
-from yt_transcript_pro.config import Config
-from yt_transcript_pro.writers import FormatWriter
 
 CHANNEL_URL = "https://www.youtube.com/@InnerCircleTrader"
 OUT_ROOT = Path("channel_extraction") / "ICT_playlists"
@@ -87,17 +90,16 @@ def resolve_playlist_videos(pl_url: str, pl_title: str) -> list[VideoMetadata]:
 
 def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
     """Fetch transcript by scraping the /watch page with urllib.
-    
+
     Even if caption download returns 429, the captions data is sometimes
     embedded directly in the page's ytInitialPlayerResponse.
     We parse it from there as a fallback.
     """
-    import urllib.request
     from yt_transcript_pro.ytdlp_extractor import _pick_browser_profile
 
     meta = VideoMetadata(video_id=video_id)
     profile = _pick_browser_profile()
-    
+
     url = f"https://www.youtube.com/watch?v={video_id}"
     headers = {
         "User-Agent": profile["User-Agent"],
@@ -109,20 +111,20 @@ def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
     for k in ("sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform"):
         if k in profile:
             headers[k] = profile[k]
-    
+
     # Set consent cookies to avoid EU consent redirect
     headers["Cookie"] = "SOCS=CAESEwgDEgk2NjEzMTkxNDYaAmVuIAEaBgiA_9S8Bg; CONSENT=YES+cb"
-    
+
     try:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             html = resp.read().decode("utf-8", errors="replace")
-        
+
         # Extract video metadata
         title_match = re.search(r'"title"\s*:\s*"([^"]*)"', html)
         if title_match:
             meta.title = title_match.group(1)
-        
+
         # Find the player response
         pr_match = re.search(
             r"ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;\s*(?:var|</script>)",
@@ -133,9 +135,9 @@ def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
                 metadata=meta, entries=[], language=None,
                 success=False, error="No playerResponse in page",
             )
-        
+
         player = json.loads(pr_match.group(1))
-        
+
         # Get captions
         captions = (
             player.get("captions", {})
@@ -147,7 +149,7 @@ def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
                 metadata=meta, entries=[], language=None,
                 success=False, error="No caption tracks found",
             )
-        
+
         # Find English track
         track_url = None
         for t in captions:
@@ -158,21 +160,21 @@ def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
         if not track_url:
             # Use first track
             track_url = captions[0].get("baseUrl", "")
-        
+
         if not track_url:
             return TranscriptResult(
                 metadata=meta, entries=[], language=None,
                 success=False, error="No caption URL",
             )
-        
+
         # Fix relative URLs
         if track_url.startswith("/"):
             track_url = "https://www.youtube.com" + track_url
-        
+
         # Add format parameter for json3
         if "fmt=" not in track_url:
             track_url += "&fmt=json3"
-        
+
         # Download the captions
         cap_req = urllib.request.Request(track_url, headers={
             "User-Agent": profile["User-Agent"],
@@ -184,10 +186,10 @@ def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
         for k in ("sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform"):
             if k in profile:
                 cap_req.add_header(k, profile[k])
-        
+
         with urllib.request.urlopen(cap_req, timeout=30) as cap_resp:
             cap_data = json.loads(cap_resp.read().decode("utf-8"))
-        
+
         entries: list[TranscriptEntry] = []
         for event in cap_data.get("events", []):
             segs = event.get("segs", [])
@@ -198,7 +200,7 @@ def _fetch_transcript_via_page(video_id: str) -> TranscriptResult:
                     start=event.get("tStartMs", 0) / 1000.0,
                     duration=event.get("dDurationMs", 0) / 1000.0,
                 ))
-        
+
         if entries:
             return TranscriptResult(
                 metadata=meta, entries=entries, language="en", success=True,

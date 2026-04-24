@@ -6,20 +6,18 @@ import asyncio
 import json
 import urllib.error
 from typing import Any
-from unittest.mock import patch
 from zlib import compress
 
 import pytest
 
 from yt_transcript_pro.config import Config
-from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
+from yt_transcript_pro.models import TranscriptResult, VideoMetadata
 from yt_transcript_pro.watch_extractor import (
     WatchPageTranscriptExtractor,
     _default_cookies,
     _extract_player_response,
     _open_gzip,
 )
-
 
 # ---------------------------------------------------------------------------
 # _open_gzip
@@ -100,7 +98,7 @@ class TestPickTrack:
         tracks = [{"languageCode": "en", "kind": "manual", "baseUrl": "http://a"}]
         result = self._ext()._pick_track(tracks)
         assert result is not None
-        lang, track, is_gen = result
+        lang, _track, is_gen = result
         assert lang == "en"
         assert is_gen is False
 
@@ -108,7 +106,7 @@ class TestPickTrack:
         tracks = [{"languageCode": "en", "kind": "asr", "baseUrl": "http://a"}]
         result = self._ext()._pick_track(tracks)
         assert result is not None
-        lang, track, is_gen = result
+        _lang, _track, is_gen = result
         assert is_gen is True
 
     def test_asr_not_allowed(self) -> None:
@@ -331,6 +329,29 @@ def test_fetch_one_async_throttle(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ext._consecutive_throttles > 0
 
 
+def test_fetch_one_async_permanent_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    ext = WatchPageTranscriptExtractor(Config(max_retries=3))
+
+    def fake_fetch_one(meta: VideoMetadata) -> TranscriptResult:
+        return TranscriptResult(
+            metadata=meta,
+            success=False,
+            error="NoTranscriptFound: no captions",
+        )
+
+    monkeypatch.setattr(ext, "fetch_one", fake_fetch_one)
+    res = asyncio.run(ext.fetch_one_async(VideoMetadata(video_id="abcdefghijk")))
+    assert not res.success
+    assert res.error == "NoTranscriptFound: no captions"
+
+
+def test_note_success_initializes_lock() -> None:
+    ext = WatchPageTranscriptExtractor(Config())
+    assert ext._throttle_lock is None
+    asyncio.run(ext._note_success())
+    assert ext._throttle_lock is not None
+
+
 # ---------------------------------------------------------------------------
 # fetch_many batch
 # ---------------------------------------------------------------------------
@@ -425,3 +446,50 @@ def test_add_query_makes_youtube_relative_urls_absolute() -> None:
     url = ext._add_query("/api/timedtext?v=abcdefghijk", {"fmt": "json3"})
     assert url.startswith("https://www.youtube.com/api/timedtext?")
     assert "fmt=json3" in url
+
+
+def test_add_query_makes_protocol_relative_urls_https() -> None:
+    ext = WatchPageTranscriptExtractor()
+    url = ext._add_query("//www.youtube.com/api/timedtext?v=abc", {"fmt": "json3"})
+    assert url.startswith("https://www.youtube.com/api/timedtext?")
+
+
+def test_http_get_with_user_agent_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    import yt_transcript_pro.watch_extractor as wem
+
+    class FakeResponse:
+        def __init__(self) -> None:
+            self.headers = {"Content-Encoding": ""}
+
+        def read(self) -> bytes:
+            return b"ok"
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        wem,
+        "_pick_browser_profile",
+        lambda: {"User-Agent": "default", "Accept-Language": "en"},
+    )
+    monkeypatch.setattr(
+        wem.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert (
+        wem._http_get(
+            "https://www.youtube.com/watch?v=abcdefghijk",
+            timeout=1,
+            ua="custom",
+        )
+        == b"ok"
+    )
+    assert (
+        wem._http_get("https://www.youtube.com/watch?v=abcdefghijk", timeout=1, ua="")
+        == b"ok"
+    )

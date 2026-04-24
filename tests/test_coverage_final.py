@@ -12,7 +12,6 @@ import pytest
 from yt_transcript_pro.config import Config
 from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
 
-
 # ---------------------------------------------------------------------------
 # auto_extractor line 122: api backend async path
 # ---------------------------------------------------------------------------
@@ -102,7 +101,7 @@ def test_watch_http_get_with_cookies() -> None:
     fake_resp.__enter__ = lambda s: s
     fake_resp.__exit__ = lambda s, *a: None
 
-    with patch.object(wem.urllib.request, "urlopen", return_value=fake_resp) as mock_open:
+    with patch.object(wem.urllib.request, "urlopen", return_value=fake_resp):
         result = wem._http_get("http://example.com", timeout=5, ua="test", cookies={"k": "v"})
     assert result == b"data"
 
@@ -114,6 +113,7 @@ def test_watch_http_get_with_cookies() -> None:
 
 def test_ytdlp_http_get_gzip() -> None:
     import gzip
+
     import yt_transcript_pro.ytdlp_extractor as yem
 
     compressed = gzip.compress(b"hello world")
@@ -130,6 +130,7 @@ def test_ytdlp_http_get_gzip() -> None:
 
 def test_ytdlp_http_get_deflate() -> None:
     from zlib import compress
+
     import yt_transcript_pro.ytdlp_extractor as yem
 
     compressed = compress(b"hello world")
@@ -155,7 +156,7 @@ def test_ytdlp_http_get_bad_gzip() -> None:
 
     with patch.object(yem.urllib.request, "urlopen", return_value=fake_resp):
         # Falls through, returns raw
-        result = yem._http_get("http://example.com")
+        yem._http_get("http://example.com")
 
 
 def test_ytdlp_http_get_bad_deflate() -> None:
@@ -168,7 +169,7 @@ def test_ytdlp_http_get_bad_deflate() -> None:
     fake_resp.__exit__ = lambda s, *a: None
 
     with patch.object(yem.urllib.request, "urlopen", return_value=fake_resp):
-        result = yem._http_get("http://example.com")
+        yem._http_get("http://example.com")
 
 
 def test_ytdlp_http_get_plain() -> None:
@@ -327,13 +328,13 @@ def test_ttml_empty_text_element() -> None:
     from yt_transcript_pro.ytdlp_extractor import _parse_xml_captions
 
     data = (
-        '<?xml version="1.0"?>'
-        '<tt xmlns="http://www.w3.org/ns/ttml">'
-        '<body><div>'
-        '<p begin="1.0s" dur="1.0s"></p>'
-        '<p begin="2.0s" dur="1.0s">content</p>'
-        '</div></body></tt>'
-    ).encode()
+        b'<?xml version="1.0"?>'
+        b'<tt xmlns="http://www.w3.org/ns/ttml">'
+        b'<body><div>'
+        b'<p begin="1.0s" dur="1.0s"></p>'
+        b'<p begin="2.0s" dur="1.0s">content</p>'
+        b'</div></body></tt>'
+    )
     entries = _parse_xml_captions(data)
     assert len(entries) == 1
     assert entries[0].text == "content"
@@ -362,7 +363,6 @@ def test_parse_subtitle_parser_exception(monkeypatch: pytest.MonkeyPatch) -> Non
     """When unknown ext and a parser throws, it should continue to the next."""
     import yt_transcript_pro.ytdlp_extractor as yem
 
-    original_parse_json3 = yem._parse_json3
 
     def broken_json3(data: bytes) -> list:
         raise RuntimeError("parser exploded")
@@ -388,7 +388,7 @@ def test_ytdlp_async_with_throttle_delay(monkeypatch: pytest.MonkeyPatch) -> Non
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -418,14 +418,15 @@ def test_ytdlp_async_with_throttle_delay(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_ytdlp_async_permanent_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    import yt_transcript_pro.ytdlp_extractor as yem
     from yt_dlp.utils import DownloadError
+
+    import yt_transcript_pro.ytdlp_extractor as yem
 
     class FakeYDL:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -493,7 +494,7 @@ def test_watch_pick_track_prefix_only() -> None:
     tracks = [{"languageCode": "zh-TW", "kind": "manual", "baseUrl": "http://a"}]
     result = ext._pick_track(tracks)
     assert result is not None
-    code, _, is_gen = result
+    code, _, _is_gen = result
     assert code == "zh-TW"
 
 
@@ -512,7 +513,7 @@ def test_ytdlp_fetch_one_subs_in_second_client(monkeypatch: pytest.MonkeyPatch) 
         def __init__(self, opts: dict[str, Any]) -> None:
             self.opts = opts
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -548,8 +549,8 @@ def test_ytdlp_fetch_one_subs_in_second_client(monkeypatch: pytest.MonkeyPatch) 
 
 def test_cli_non_tty_logging(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
     """Simulate non-TTY output to exercise the non-TTY fallback logging."""
-    from pathlib import Path
     from typer.testing import CliRunner
+
     from yt_transcript_pro import cli as cli_module
     from yt_transcript_pro.cli import app
 

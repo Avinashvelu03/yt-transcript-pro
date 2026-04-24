@@ -7,7 +7,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional, cast
 
 import typer
 from rich.console import Console
@@ -17,11 +17,12 @@ from rich.console import Console
 # default cp1252 console on Windows. Force UTF-8 output transparently.
 if os.name == "nt":  # pragma: no cover — Windows-only
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 — best-effort only
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            cast(Callable[..., object], reconfigure)(
+                encoding="utf-8", errors="replace"
+            )
 from rich.logging import RichHandler
 from rich.progress import (
     BarColumn,
@@ -35,15 +36,15 @@ from rich.progress import (
 )
 
 from yt_transcript_pro import __version__
+from yt_transcript_pro.auto_extractor import AutoTranscriptExtractor
 from yt_transcript_pro.checkpoint import Checkpoint
 from yt_transcript_pro.config import Config
 from yt_transcript_pro.extractor import TranscriptExtractor
 from yt_transcript_pro.models import TranscriptResult, VideoMetadata
 from yt_transcript_pro.resolver import SourceResolver
+from yt_transcript_pro.watch_extractor import WatchPageTranscriptExtractor
 from yt_transcript_pro.writers import FormatWriter
 from yt_transcript_pro.ytdlp_extractor import YtDlpTranscriptExtractor
-from yt_transcript_pro.watch_extractor import WatchPageTranscriptExtractor
-from yt_transcript_pro.auto_extractor import AutoTranscriptExtractor
 
 app = typer.Typer(
     name="yt-transcript-pro",
@@ -234,7 +235,7 @@ def extract(
             if backend_order
             else None
         )
-        extractor: object = AutoTranscriptExtractor(cfg, backend_order=order)
+        extractor: Any = AutoTranscriptExtractor(cfg, backend_order=order)
         order_str = "→".join(order) if order else "ytdlp→watch→api"
         console.print(
             f"[dim]Backend: auto ({order_str} cascade + per-backend circuit breaker).[/dim]"
@@ -273,7 +274,7 @@ def _formats_to_write(fmt: str) -> list[str]:
 
 
 def _run(
-    extractor: object,
+    extractor: Any,
     writer: FormatWriter,
     videos: list[VideoMetadata],
     cfg: Config,

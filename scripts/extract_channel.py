@@ -38,7 +38,7 @@ async def run(args: argparse.Namespace) -> int:
     cfg = Config(
         concurrency=args.concurrency,
         max_retries=args.retries,
-        output_dir=Path(args.out).parent or Path("."),
+        output_dir=Path(args.out).parent or Path(),
         output_format="txt",
         combine_into_single_file=True,
         include_metadata_header=True,

@@ -33,18 +33,17 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import io
 import json
 import logging
 import random
 import re
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ET
 from collections.abc import Iterable
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from zlib import MAX_WBITS, decompress
 
+from defusedxml import ElementTree
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError, ExtractorError
 
@@ -268,16 +267,16 @@ _ACCEPT_LANGUAGES: tuple[str, ...] = (
 
 
 def _pick_user_agent() -> str:
-    return random.choice(_USER_AGENTS)  # noqa: S311 — not crypto use
+    return random.choice(_USER_AGENTS)  # nosec B311
 
 
 def _pick_accept_lang() -> str:
-    return random.choice(_ACCEPT_LANGUAGES)  # noqa: S311
+    return random.choice(_ACCEPT_LANGUAGES)  # nosec B311
 
 
 def _pick_browser_profile() -> dict[str, str]:
     """Return a full set of coherent browser headers for one request."""
-    profile = dict(random.choice(_BROWSER_PROFILES))  # noqa: S311
+    profile = dict(random.choice(_BROWSER_PROFILES))  # nosec B311
     # Always add common headers
     profile["Accept-Language"] = _pick_accept_lang()
     profile["Accept-Encoding"] = "gzip, deflate, br, zstd"
@@ -396,23 +395,24 @@ def _http_get(url: str, timeout: float = 30.0, ua: str | None = None) -> bytes:
         if key in profile:
             headers[key] = profile[key]
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — youtube url
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
         raw = resp.read()
         encoding = (resp.headers.get("Content-Encoding") or "").lower()
     if encoding == "gzip":
         try:
             return gzip.decompress(raw)
         except OSError:
-            pass
+            return cast(bytes, raw)
     if encoding == "deflate":
         try:
             return decompress(raw)
         except Exception:
             try:
                 return decompress(raw, -MAX_WBITS)
-            except Exception:
-                pass
-    return raw
+            except Exception as exc:
+                logger.debug("deflate caption decode failed: %s", exc)
+                return cast(bytes, raw)
+    return cast(bytes, raw)
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +463,7 @@ def _parse_xml_captions(data: bytes) -> list[TranscriptEntry]:
     out: list[TranscriptEntry] = []
     # Try with ElementTree first (handles both ttml and srv)
     try:
-        root = ET.fromstring(text)  # noqa: S314 — subtitle, not untrusted xml
+        root = ElementTree.fromstring(text)
         # TTML: <p begin="..." dur="...">text</p>
         ns = {"tt": "http://www.w3.org/ns/ttml"}
         ps = root.findall(".//tt:p", ns) or root.findall(".//p")
@@ -490,7 +490,7 @@ def _parse_xml_captions(data: bytes) -> list[TranscriptEntry]:
             if not txt:
                 continue
             out.append(TranscriptEntry(text=txt, start=max(start, 0.0), duration=max(dur, 0.0)))
-    except ET.ParseError:
+    except ElementTree.ParseError:
         # Fallback to regex for malformed XML
         for m in _SRV_CUE_RE.finditer(text):
             start = float(m.group("start") or 0)
@@ -595,8 +595,8 @@ def parse_subtitle(data: bytes, ext: str) -> list[TranscriptEntry]:
             entries = p(data)
             if entries:
                 return entries
-        except Exception:  # noqa: BLE001 — parsers are defensive already
-            continue
+        except Exception as exc:
+            logger.debug("subtitle parser %s failed: %s", p.__name__, exc)
     return []
 
 
@@ -701,7 +701,7 @@ class YtDlpTranscriptExtractor:
                     )
                 # antibot / transient / unknown — try next client
                 continue
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 logger.debug(
                     "client=%s unexpected for %s: %s",
@@ -738,7 +738,7 @@ class YtDlpTranscriptExtractor:
 
     @staticmethod
     def _merge_metadata(meta: VideoMetadata, info: dict[str, Any]) -> VideoMetadata:
-        merged = meta.model_copy(
+        return meta.model_copy(
             update={
                 "title": meta.title or str(info.get("title") or ""),
                 "channel": meta.channel or str(info.get("channel") or info.get("uploader") or ""),
@@ -750,7 +750,6 @@ class YtDlpTranscriptExtractor:
                 "url": meta.url or f"https://www.youtube.com/watch?v={meta.video_id}",
             }
         )
-        return merged
 
     # ---------- caption selection ----------
 
@@ -784,7 +783,7 @@ class YtDlpTranscriptExtractor:
                 error=f"No captions in preferred languages. Available: {langs}",
             )
 
-        track_pool, lang, track = picked
+        _track_pool, lang, track = picked
         try:
             data = _http_get(track["url"], timeout=self.config.request_timeout)
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
@@ -793,7 +792,7 @@ class YtDlpTranscriptExtractor:
                 success=False,
                 error=f"caption download failed: {type(exc).__name__}: {exc}",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return TranscriptResult(
                 metadata=meta,
                 success=False,
@@ -875,10 +874,10 @@ class YtDlpTranscriptExtractor:
             delay = self._throttle_backoff
 
         if delay > 0:
-            await asyncio.sleep(delay * (0.8 + 0.4 * random.random()))  # noqa: S311
+            await asyncio.sleep(delay * (0.8 + 0.4 * random.random()))  # nosec B311
 
         # Per-request micro-jitter to avoid synchronized hammering.
-        await asyncio.sleep(0.05 + 0.25 * random.random())  # noqa: S311
+        await asyncio.sleep(0.05 + 0.25 * random.random())  # nosec B311
 
         attempts = max(self.config.max_retries + 1, 1)
         result: TranscriptResult | None = None
@@ -898,7 +897,7 @@ class YtDlpTranscriptExtractor:
                 # Exponential backoff with jitter
                 base = self.config.retry_initial_delay * (2**attempt)
                 backoff = min(base, self.config.retry_max_delay)
-                backoff *= 0.7 + 0.6 * random.random()  # noqa: S311
+                backoff *= 0.7 + 0.6 * random.random()  # nosec B311
                 logger.debug(
                     "retry %d for %s after %.2fs (reason=%s)",
                     attempt + 1,
@@ -910,16 +909,14 @@ class YtDlpTranscriptExtractor:
         return result or TranscriptResult(metadata=meta, success=False, error="no attempts")
 
     async def _note_success(self) -> None:
-        assert self._throttle_lock is not None
-        async with self._throttle_lock:
+        async with self._lock():
             self._consecutive_throttles = 0
             # Drain the cooperative backoff gradually (don't slam it to zero
             # or we'll just get throttled again immediately).
             self._throttle_backoff = max(0.0, self._throttle_backoff * 0.7 - 0.25)
 
     async def _note_throttle(self) -> None:
-        assert self._throttle_lock is not None
-        async with self._throttle_lock:
+        async with self._lock():
             self._consecutive_throttles += 1
             new = max(self._throttle_backoff * 1.3, 1.0) + self._consecutive_throttles * 0.5
             self._throttle_backoff = min(new, 15.0)
@@ -929,6 +926,11 @@ class YtDlpTranscriptExtractor:
                     self._throttle_backoff,
                     self._consecutive_throttles,
                 )
+
+    def _lock(self) -> asyncio.Lock:
+        if self._throttle_lock is None:
+            self._throttle_lock = asyncio.Lock()
+        return self._throttle_lock
 
     # ---------- batch ----------
 
@@ -953,7 +955,7 @@ class YtDlpTranscriptExtractor:
                 if progress is not None:
                     try:
                         progress(counter["done"], total, res)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning("progress callback raised: %s", exc)
             return res
 

@@ -11,7 +11,6 @@ import pytest
 from yt_transcript_pro.config import Config
 from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
 
-
 # ---------------------------------------------------------------------------
 # auto_extractor: fetch_many WITHOUT progress (166->171: progress is None)
 # ---------------------------------------------------------------------------
@@ -85,7 +84,7 @@ def test_ytdlp_fetch_many_no_progress(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -133,8 +132,8 @@ def test_watch_pick_track_translation_not_translatable() -> None:
 def test_cli_on_progress_failed_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
-    from pathlib import Path
     from typer.testing import CliRunner
+
     from yt_transcript_pro import cli as cli_module
     from yt_transcript_pro.cli import app
 
@@ -210,14 +209,15 @@ def test_ytdlp_pick_any_english_best_format_none() -> None:
 
 
 def test_ytdlp_async_retry_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    import yt_transcript_pro.ytdlp_extractor as yem
     from yt_dlp.utils import DownloadError
+
+    import yt_transcript_pro.ytdlp_extractor as yem
 
     class FakeYDL:
         def __init__(self, opts: dict[str, Any]) -> None:
             pass
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -246,12 +246,12 @@ def test_vtt_empty_cue_after_strip() -> None:
     from yt_transcript_pro.ytdlp_extractor import _parse_vtt
 
     data = (
-        "WEBVTT\n\n"
-        "00:00:01.000 --> 00:00:03.000\n"
-        "<c.colorFFFFFF>  </c>\n\n"
-        "00:00:03.000 --> 00:00:05.000\n"
-        "actual text\n"
-    ).encode()
+        b"WEBVTT\n\n"
+        b"00:00:01.000 --> 00:00:03.000\n"
+        b"<c.colorFFFFFF>  </c>\n\n"
+        b"00:00:03.000 --> 00:00:05.000\n"
+        b"actual text\n"
+    )
     entries = _parse_vtt(data)
     assert len(entries) == 1
     assert entries[0].text == "actual text"

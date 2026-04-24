@@ -12,12 +12,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
+import tempfile
 import time
-import logging
 from pathlib import Path
+
+from yt_dlp import YoutubeDL
+
+from yt_transcript_pro.config import Config
+from yt_transcript_pro.models import TranscriptEntry, TranscriptResult, VideoMetadata
+from yt_transcript_pro.resolver import SourceResolver
+from yt_transcript_pro.writers import FormatWriter
 
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 if sys.platform == "win32":
@@ -31,14 +39,6 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-from yt_dlp import YoutubeDL
-
-from yt_transcript_pro.config import Config
-from yt_transcript_pro.models import TranscriptResult, VideoMetadata
-from yt_transcript_pro.auto_extractor import AutoTranscriptExtractor
-from yt_transcript_pro.writers import FormatWriter
-from yt_transcript_pro.resolver import SourceResolver
 
 CHANNEL_URL = "https://www.youtube.com/@InnerCircleTrader"
 OUT_ROOT = Path("channel_extraction") / "ICT_playlists"
@@ -100,10 +100,9 @@ def resolve_playlist_videos(pl_url: str, pl_title: str) -> list[VideoMetadata]:
 
 def _ydl_download_transcript(video_id: str) -> TranscriptResult:
     """Download transcript for a single video using yt-dlp with browser cookies."""
-    import tempfile
-
     meta = VideoMetadata(video_id=video_id)
     with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
         opts = {
             "quiet": True,
             "no_warnings": True,
@@ -112,7 +111,7 @@ def _ydl_download_transcript(video_id: str) -> TranscriptResult:
             "writesubtitles": True,
             "subtitleslangs": ["en"],
             "subtitlesformat": "json3",
-            "outtmpl": os.path.join(tmpdir, "%(id)s"),
+            "outtmpl": str(tmp_path / "%(id)s"),
             "cookiesfrombrowser": ("chrome",),
             "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         }
@@ -139,13 +138,12 @@ def _ydl_download_transcript(video_id: str) -> TranscriptResult:
             )
 
         # Find the subtitle file
-        from yt_transcript_pro.models import TranscriptEntry
-        sub_file = os.path.join(tmpdir, f"{video_id}.en.json3")
-        if not os.path.exists(sub_file):
+        sub_file = tmp_path / f"{video_id}.en.json3"
+        if not sub_file.exists():
             # Try auto-generated
-            for f in os.listdir(tmpdir):
-                if f.endswith(".json3"):
-                    sub_file = os.path.join(tmpdir, f)
+            for path in tmp_path.iterdir():
+                if path.name.endswith(".json3"):
+                    sub_file = path
                     break
             else:
                 return TranscriptResult(
@@ -154,7 +152,7 @@ def _ydl_download_transcript(video_id: str) -> TranscriptResult:
                 )
 
         try:
-            data = json.loads(Path(sub_file).read_text(encoding="utf-8"))
+            data = json.loads(sub_file.read_text(encoding="utf-8"))
             entries: list[TranscriptEntry] = []
             for event in data.get("events", []):
                 segs = event.get("segs", [])

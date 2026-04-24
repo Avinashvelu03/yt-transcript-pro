@@ -37,7 +37,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from zlib import MAX_WBITS, decompress
 
 from yt_transcript_pro.config import Config
@@ -64,7 +64,7 @@ _PLAYER_RESPONSE_RE2 = re.compile(
 
 
 def _pick_user_agent() -> str:
-    return random.choice(_USER_AGENTS)  # noqa: S311
+    return random.choice(_USER_AGENTS)  # nosec B311
 
 
 def _open_gzip(resp_raw: bytes, encoding: str) -> bytes:
@@ -111,10 +111,10 @@ def _http_get(url: str, *, timeout: float, ua: str, cookies: dict[str, str] | No
     if cookies:
         headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
         raw = resp.read()
         enc = resp.headers.get("Content-Encoding") or ""
-    return _open_gzip(raw, enc)
+    return _open_gzip(cast(bytes, raw), enc)
 
 
 def _default_cookies() -> dict[str, str]:
@@ -134,7 +134,8 @@ def _extract_player_response(html: str) -> dict[str, Any] | None:
     m = _PLAYER_RESPONSE_RE.search(html)
     if m:
         try:
-            return json.loads(m.group(1))
+            payload = json.loads(m.group(1))
+            return cast(dict[str, Any], payload) if isinstance(payload, dict) else None
         except json.JSONDecodeError:
             pass
     # Fallback: JSON-escaped variant embedded in ytcfg
@@ -143,7 +144,8 @@ def _extract_player_response(html: str) -> dict[str, Any] | None:
         # The string is a JSON-escaped JSON string — decode it twice
         try:
             unescaped = json.loads(f'"{m2.group("escaped")}"')
-            return json.loads(unescaped)
+            payload = json.loads(unescaped)
+            return cast(dict[str, Any], payload) if isinstance(payload, dict) else None
         except json.JSONDecodeError:
             pass
     return None
@@ -179,7 +181,7 @@ class WatchPageTranscriptExtractor:
                 success=False,
                 error=f"HTTPError {exc.code} on watch page",
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return TranscriptResult(
                 metadata=meta,
                 success=False,
@@ -247,7 +249,7 @@ class WatchPageTranscriptExtractor:
             cap_bytes = _http_get(
                 cap_url, timeout=self.config.request_timeout, ua=ua, cookies=self._cookies
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return TranscriptResult(
                 metadata=meta,
                 success=False,
@@ -326,8 +328,8 @@ class WatchPageTranscriptExtractor:
         async with self._throttle_lock:
             delay = self._throttle_backoff
         if delay > 0:
-            await asyncio.sleep(delay * (0.8 + 0.4 * random.random()))  # noqa: S311
-        await asyncio.sleep(0.05 + 0.25 * random.random())  # noqa: S311
+            await asyncio.sleep(delay * (0.8 + 0.4 * random.random()))  # nosec B311
+        await asyncio.sleep(0.05 + 0.25 * random.random())  # nosec B311
 
         attempts = max(self.config.max_retries + 1, 1)
         last: TranscriptResult | None = None
@@ -347,19 +349,22 @@ class WatchPageTranscriptExtractor:
             if attempt < attempts - 1:
                 base = self.config.retry_initial_delay * (2**attempt)
                 backoff = min(base, self.config.retry_max_delay)
-                backoff *= 0.7 + 0.6 * random.random()  # noqa: S311
+                backoff *= 0.7 + 0.6 * random.random()  # nosec B311
                 await asyncio.sleep(backoff)
         return last or TranscriptResult(metadata=meta, success=False, error="no attempts")
 
+    def _lock(self) -> asyncio.Lock:
+        if self._throttle_lock is None:
+            self._throttle_lock = asyncio.Lock()
+        return self._throttle_lock
+
     async def _note_success(self) -> None:
-        assert self._throttle_lock is not None
-        async with self._throttle_lock:
+        async with self._lock():
             self._consecutive_throttles = 0
             self._throttle_backoff = max(0.0, self._throttle_backoff * 0.7 - 0.25)
 
     async def _note_throttle(self) -> None:
-        assert self._throttle_lock is not None
-        async with self._throttle_lock:
+        async with self._lock():
             self._consecutive_throttles += 1
             # Grow backoff, but cap it tightly (15s) so the circuit breaker
             # in ``AutoTranscriptExtractor`` can disable this backend fast
@@ -396,7 +401,7 @@ class WatchPageTranscriptExtractor:
                 if progress is not None:
                     try:
                         progress(counter["done"], total, res)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning("progress callback raised: %s", exc)
             return res
 

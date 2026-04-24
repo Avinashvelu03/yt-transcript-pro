@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterable
-from typing import Callable
+from typing import Callable, Union
 
 from yt_transcript_pro.config import Config
 from yt_transcript_pro.extractor import TranscriptExtractor
@@ -45,6 +45,11 @@ _BREAKER_THRESHOLD = 15
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[int, int, TranscriptResult], None]
+_SyncBackend = Union[
+    WatchPageTranscriptExtractor,
+    YtDlpTranscriptExtractor,
+    TranscriptExtractor,
+]
 
 
 class AutoTranscriptExtractor:
@@ -74,7 +79,7 @@ class AutoTranscriptExtractor:
             tuple(backend_order) if backend_order else ("ytdlp", "watch", "api")
         )
         # Circuit-breaker counters per backend.
-        self._breaker_failures: dict[str, int] = {b: 0 for b in self.backend_order}
+        self._breaker_failures: dict[str, int] = dict.fromkeys(self.backend_order, 0)
         self._breaker_lock: asyncio.Lock | None = None
 
     # ---------- sync ----------
@@ -99,8 +104,13 @@ class AutoTranscriptExtractor:
             metadata=meta, success=False, error="all backends failed"
         )
 
-    def _get(self, name: str) -> object:
-        return {"watch": self._watch, "ytdlp": self._ytdlp, "api": self._api}[name]
+    def _get(self, name: str) -> _SyncBackend:
+        backends: dict[str, _SyncBackend] = {
+            "watch": self._watch,
+            "ytdlp": self._ytdlp,
+            "api": self._api,
+        }
+        return backends[name]
 
     # ---------- async ----------
 
@@ -113,7 +123,6 @@ class AutoTranscriptExtractor:
                 if self._breaker_failures.get(backend, 0) >= _BREAKER_THRESHOLD:
                     logger.debug("auto: skipping %s (breaker open)", backend)
                     continue
-            ext = self._get(backend)
             if backend == "watch":
                 res = await self._watch.fetch_one_async(meta)
             elif backend == "ytdlp":
@@ -166,7 +175,7 @@ class AutoTranscriptExtractor:
                 if progress is not None:
                     try:
                         progress(counter["done"], total, res)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning("progress callback raised: %s", exc)
             return res
 

@@ -19,14 +19,13 @@ from yt_transcript_pro.watch_extractor import (
     _extract_player_response,
 )
 from yt_transcript_pro.ytdlp_extractor import (
+    YtDlpTranscriptExtractor,
     _classify_error,
     _parse_json3,
     _parse_vtt,
     _parse_xml_captions,
-    YtDlpTranscriptExtractor,
     parse_subtitle,
 )
-
 
 # ---------------------------------------------------------------------------
 # Parser tests
@@ -59,12 +58,12 @@ def test_parse_xml_captions_srv() -> None:
 
 def test_parse_vtt() -> None:
     data = (
-        "WEBVTT\n\n"
-        "00:00:01.000 --> 00:00:03.000\n"
-        "<c.colorFFFFFF>hello</c> world\n\n"
-        "00:00:03.000 --> 00:00:05.000\n"
-        "next cue\n"
-    ).encode()
+        b"WEBVTT\n\n"
+        b"00:00:01.000 --> 00:00:03.000\n"
+        b"<c.colorFFFFFF>hello</c> world\n\n"
+        b"00:00:03.000 --> 00:00:05.000\n"
+        b"next cue\n"
+    )
     entries = _parse_vtt(data)
     assert entries[0].text == "hello world"
     assert entries[0].start == 1.0
@@ -136,7 +135,7 @@ def test_ytdlp_fetch_one_success(monkeypatch: pytest.MonkeyPatch, fake_info_succ
         def __init__(self, opts: dict[str, Any]) -> None:
             self.opts = opts
 
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -162,11 +161,12 @@ def test_ytdlp_fetch_one_success(monkeypatch: pytest.MonkeyPatch, fake_info_succ
 
 
 def test_ytdlp_fetch_one_permanent_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    import yt_transcript_pro.ytdlp_extractor as yem
     from yt_dlp.utils import DownloadError
 
+    import yt_transcript_pro.ytdlp_extractor as yem
+
     class FakeYDL:
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -186,11 +186,12 @@ def test_ytdlp_fetch_one_permanent_error(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_ytdlp_fetch_one_all_clients_fail(monkeypatch: pytest.MonkeyPatch) -> None:
-    import yt_transcript_pro.ytdlp_extractor as yem
     from yt_dlp.utils import DownloadError
 
+    import yt_transcript_pro.ytdlp_extractor as yem
+
     class FakeYDL:
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -222,7 +223,7 @@ def test_ytdlp_fetch_many(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = {"automatic_captions": {"en": [{"ext": "json3", "url": "x"}]}}
 
     class FakeYDL:
-        def __enter__(self) -> "FakeYDL":
+        def __enter__(self) -> FakeYDL:
             return self
 
         def __exit__(self, *a: Any) -> None:
@@ -424,7 +425,7 @@ def test_auto_circuit_breaker_disables_bad_backend(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(auto._ytdlp, "fetch_one", lambda m: good)
 
     # Trip the breaker by running _BREAKER_THRESHOLD+ fetches
-    for i in range(ae._BREAKER_THRESHOLD + 3):
+    for _i in range(ae._BREAKER_THRESHOLD + 3):
         res = auto.fetch_one(VideoMetadata(video_id="abcdefghijk"))
         assert res.success  # ytdlp eventually carries the load
 
