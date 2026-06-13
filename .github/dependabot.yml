@@ -1,3 +1,5 @@
+# Dependabot configuration
+# (comment added to retrigger CI; no functional change)
 version: 2
 updates:
   - package-ecosystem: "pip"
